@@ -4,13 +4,12 @@ pipeline {
   options { timestamps() }
   
   environment {
-    TF_DOCKER_IMAGE      = "teaas-tooling:${env.TEAAS_TOOLING_VERSION}"
-    DOCKER_REGISTRY      = "${env.DEFAULT_ACR}"
-    REGISTRY_CREDENTIALS = "DEFAULT_ACR_CREDENTIAL"
+    TF_DOCKER_IMAGE      = "alpine:3.13.6"
+    DOCKER_REGISTRY      = "https://hub.docker.com/_/alpine"
+    REGISTRY_CREDENTIALS = "DOCKER_ID"
     AZ_DEVOPS_TOKEN      = "az-devops-token"
     ARM_USE_MSI          = true
   }
-  
   stages{
     stage('checkout') {
       steps {
@@ -21,18 +20,13 @@ pipeline {
     stage ('init plan apply') {
       steps {
         script {
-          withEnv([
-            "GIT_ASKPASS=${WORKSPACE}/askpass.sh",
-            "ARM_SUBSCRIPTION_ID=${env.gbl_subscription_id}",]){
-            withCredentials([usernamePassword(credentialsId: "${env.AZ_DEVOPS_TOKEN}", 
-                                            passwordVariable: 'GIT_PASSWORD',
-                                            usernameVariable: 'GIT_USERNAME')]){
-              docker.withRegistry("${DOCKER_REGISTRY}", "${REGISTRY_CREDENTIALS}") {
+            withCredentials([string(credentialsId: 'MY_SUBSCRIPTION_ID', variable: 'ID')]){
+              withDockerRegistry(credentialsId: 'REGISTRY_CREDENTIALS', url: 'DOCKER_REGISTRY')  {
                               // Pull the Docker image from the registry
                 docker.image(TF_DOCKER_IMAGE).pull()
                 docker.image(TF_DOCKER_IMAGE).inside() {
                   sh 'az login --identity'
-                  sh 'az account set -s "${ARM_SUBSCRIPTION_ID}"'
+                  sh 'az account set -s "${MY_SUBSCRIPTION_ID}"'
                   for (stack in TF_STACK) {
                     def TF_EXEC_PATH = stack
                     def TF_BACKEND_CONF = "-backend-config='storage_account_name=${env.environment}empty' -backend-config='resource_group_name=cmn-${env.environment}-                     ${env.region_abbreviation}-gbltfstate-rg' -backend-config='key=${env.environment}/${env.vertical}/global-${env.region_abbreviation}/${stack}/terraform.tfstate'"
@@ -63,7 +57,6 @@ pipeline {
                 }
               }
             }
-          }
         }
       }
     }
